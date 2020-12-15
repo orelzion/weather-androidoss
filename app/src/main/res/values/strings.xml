@@ -1,3 +1,9 @@
 <resources>
     <string name="app_name">Weather App</string>
+    <string name="city_name">City Name</string>
+    <integer-array name="weather_icons">
+        <item>@drawable/ic_cloudy_line</item>
+        <item>@drawable/ic_sun_line</item>
+        <item>@drawable/ic_rainy_line</item>
+    </integer-array>
 </resources>
