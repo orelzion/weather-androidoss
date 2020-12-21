@@ -11,11 +11,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.RecyclerView
 import com.github.orelzion.weatherapp.model.ClimacellService
 import com.github.orelzion.weatherapp.model.ForecastDay
+import com.github.orelzion.weatherapp.model.WeatherCondition
 import com.jakewharton.retrofit2.converter.kotlinx.serialization.asConverterFactory
 import kotlinx.serialization.json.Json
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.logging.HttpLoggingInterceptor
+import okhttp3.MediaType
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -24,24 +23,20 @@ import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
+    private var weatherDaysAdapter: WeatherDaysAdapter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
         val weatherDaysList = findViewById<RecyclerView>(R.id.weatherDaysList)
-        val adapter = WeatherDaysAdapter()
+        weatherDaysAdapter = WeatherDaysAdapter()
 
-        weatherDaysList.adapter = adapter
-
-        val client = OkHttpClient.Builder()
-            .addInterceptor(HttpLoggingInterceptor().apply { level = HttpLoggingInterceptor.Level.BODY })
-            .build()
+        weatherDaysList.adapter = weatherDaysAdapter
 
         val retrofit = Retrofit.Builder()
             .baseUrl("https://api.climacell.co/v3/")
-            .addConverterFactory(Json.asConverterFactory("application/json".toMediaType()))
-            .client(client)
+            .addConverterFactory(Json.asConverterFactory(MediaType.get("application/json")))
             .build()
         val climacellService = retrofit.create(ClimacellService::class.java)
 
@@ -57,12 +52,29 @@ class MainActivity : AppCompatActivity() {
         forecastCall.enqueue(ForecastCallback())
     }
 
-    inner class ForecastCallback: Callback<List<ForecastDay>> {
+    inner class ForecastCallback : Callback<List<ForecastDay>> {
         override fun onResponse(
             call: Call<List<ForecastDay>>,
             response: Response<List<ForecastDay>>
         ) {
-            Toast.makeText(this@MainActivity, response.toString(), Toast.LENGTH_LONG).show()
+            if (response.isSuccessful) {
+                val weatherDays = response.body()?.map { forecastDay: ForecastDay ->
+                    WeatherDay(
+                        dayOfWeek = forecastDay.observation_time.toCalendar()
+                            .get(Calendar.DAY_OF_WEEK),
+                        condition = forecastDay.weather_code.value,
+                        degrees = forecastDay.getAverageTemp().formatted()
+                    )
+                }
+
+                weatherDays?.let {
+                    weatherDaysAdapter?.weatherDays = it
+                    weatherDaysAdapter?.notifyDataSetChanged()
+                }
+
+            } else {
+                //TODO handle error
+            }
         }
 
         override fun onFailure(call: Call<List<ForecastDay>>, t: Throwable) {
@@ -73,12 +85,7 @@ class MainActivity : AppCompatActivity() {
 
     class WeatherDaysAdapter : RecyclerView.Adapter<WeatherDaysAdapter.WeatherDaysViewHolder>() {
 
-        var weatherDays: List<WeatherDay> = listOf(
-            WeatherDay(Date(), "Sunny", "22"),
-            WeatherDay(Date(), "Cloudy", "18"),
-            WeatherDay(Date(), "Sunny", "26"),
-            WeatherDay(Date(), "Rainy", "16")
-        )
+        var weatherDays: List<WeatherDay> = emptyList()
 
         class WeatherDaysViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
             val weatherIcon: ImageView = itemView.findViewById(R.id.weatherIcon)
@@ -96,15 +103,39 @@ class MainActivity : AppCompatActivity() {
         override fun onBindViewHolder(holder: WeatherDaysViewHolder, position: Int) {
             val weatherDay = weatherDays[position]
 
-            holder.condition.text = "${weatherDay.degrees}°"
-            holder.dateView.text = weatherDay.date.toString()
+            holder.condition.text = weatherDay.degrees
+            holder.dateView.text =
+                holder.itemView.context.resources.getStringArray(R.array.days_of_week)[weatherDay.dayOfWeek - 1]
 
             holder.itemView.context.resources.getIntArray(R.array.weather_icons)
-            when (weatherDay.condition) {
-                "Sunny" -> holder.weatherIcon.setImageResource(R.drawable.ic_sun_line)
-                "Rainy" -> holder.weatherIcon.setImageResource(R.drawable.ic_rainy_line)
-                "Cloudy" -> holder.weatherIcon.setImageResource(R.drawable.ic_cloudy_line)
-            }
+
+            holder.weatherIcon.setImageResource(
+                when (weatherDay.condition) {
+                    WeatherCondition.rain_heavy,
+                    WeatherCondition.rain,
+                    WeatherCondition.rain_light,
+                    WeatherCondition.freezing_rain_heavy,
+                    WeatherCondition.freezing_rain,
+                    WeatherCondition.freezing_rain_light,
+                    WeatherCondition.freezing_drizzle,
+                    WeatherCondition.drizzle -> R.drawable.ic_rainy_line
+                    WeatherCondition.ice_pellets_heavy -> TODO()
+                    WeatherCondition.ice_pellets -> TODO()
+                    WeatherCondition.ice_pellets_light -> TODO()
+                    WeatherCondition.snow_heavy -> TODO()
+                    WeatherCondition.snow -> TODO()
+                    WeatherCondition.snow_light -> TODO()
+                    WeatherCondition.flurries -> TODO()
+                    WeatherCondition.tstorm -> TODO()
+                    WeatherCondition.fog_light -> TODO()
+                    WeatherCondition.fog -> TODO()
+                    WeatherCondition.cloudy,
+                    WeatherCondition.mostly_cloudy,
+                    WeatherCondition.partly_cloudy -> R.drawable.ic_cloudy_line
+                    WeatherCondition.mostly_clear,
+                    WeatherCondition.clear -> R.drawable.ic_sun_line
+                }
+            )
         }
 
         override fun getItemCount(): Int {
@@ -112,5 +143,5 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    data class WeatherDay(val date: Date, val condition: String, val degrees: String)
+    data class WeatherDay(val dayOfWeek: Int, val condition: WeatherCondition, val degrees: String)
 }
